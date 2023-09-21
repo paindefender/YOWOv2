@@ -45,19 +45,20 @@ def parse_args():
 
 @torch.no_grad()
 def run(args, d_cfg, model, device, transform, class_names):
+    run_start_time = time.time()
     # path to save 
     save_path = os.path.join(args.save_folder, 'ava_video')
     os.makedirs(save_path, exist_ok=True)
 
     # path to video
-    path_to_video = os.path.join(d_cfg['data_root'], 'videos_15min', args.video)
+    path_to_video = args.video#os.path.join(d_cfg['data_root'], 'videos_15min', args.video)
 
     # video
     video = cv2.VideoCapture(path_to_video)
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    save_size = (640, 480)
+    save_size = (224, 224)
     save_name = os.path.join(save_path, 'detection.avi')
-    fps = 15.0
+    fps = 24.0
     out = cv2.VideoWriter(save_name, fourcc, fps, save_size)
 
     video_clip = []
@@ -65,46 +66,52 @@ def run(args, d_cfg, model, device, transform, class_names):
         ret, frame = video.read()
         
         if ret:
+            t0 = time.time()
+            frame = cv2.resize(frame, (224, 224), interpolation=cv2.INTER_AREA)
             # to PIL image
             frame_pil = Image.fromarray(frame.astype(np.uint8))
 
             # prepare
             if len(video_clip) <= 0:
-                for _ in range(d_cfg['len_clip']):
+                for _ in range(32):
                     video_clip.append(frame_pil)
-
             video_clip.append(frame_pil)
             del video_clip[0]
+
+            t1 = time.time()
+            print(f"constructed frame stack {t1-t0} s")
 
             # orig size
             orig_h, orig_w = frame.shape[:2]
 
             # transform
+            transf0 = time.time()
             x, _ = transform(video_clip)
             # List [T, 3, H, W] -> [3, T, H, W]
             x = torch.stack(x, dim=1)
             x = x.unsqueeze(0).to(device) # [B, 3, T, H, W], B=1
-
-            t0 = time.time()
+            transf1 = time.time()
+            print(f"prepared data in {transf1-transf0} s")
             # inference
             batch_bboxes = model(x)
-            print("inference time ", time.time() - t0, "s")
 
             # batch size = 1
             bboxes = batch_bboxes[0]
 
             # visualize detection results
             for bbox in bboxes:
+                print(bbox.shape)
                 x1, y1, x2, y2 = bbox[:4]
                 det_conf = float(bbox[4])
-                cls_out = [det_conf * cls_conf.cpu().numpy() for cls_conf in bbox[5]]
+                cls_out = [det_conf * cls_conf for cls_conf in bbox[5:]]
             
                 # rescale bbox
                 x1, x2 = int(x1 * orig_w), int(x2 * orig_w)
                 y1, y2 = int(y1 * orig_h), int(y2 * orig_h)
 
                 cls_scores = np.array(cls_out)
-                indices = np.where(cls_scores > 0.4)
+                # print(cls_scores)
+                indices = np.where(cls_scores > 0.1)
                 scores = cls_scores[indices]
                 indices = list(indices[0])
                 scores = list(scores)
@@ -129,7 +136,7 @@ def run(args, d_cfg, model, device, transform, class_names):
 
             # save
             out.write(frame)
-
+            print(f"inference time+ {(time.time() - t0):.5f}s")
             if args.show:
                 # show
                 cv2.imshow('key-frame detection', frame)
@@ -140,6 +147,8 @@ def run(args, d_cfg, model, device, transform, class_names):
 
     video.release()
     out.release()
+    print()
+    print(f"Finished inference in {(time.time() - run_start_time):.0f} seconds")
     cv2.destroyAllWindows()
 
 
@@ -152,6 +161,8 @@ if __name__ == '__main__':
     else:
         device = torch.device("cpu")
 
+    print(device)
+
     # config
     d_cfg = build_dataset_config(args)
     m_cfg = build_model_config(args)
@@ -162,8 +173,9 @@ if __name__ == '__main__':
     # transform
     basetransform = BaseTransform(
         img_size=d_cfg['test_size'],
-        pixel_mean=d_cfg['pixel_mean'],
-        pixel_std=d_cfg['pixel_std']
+        device=device,
+        # pixel_mean=d_cfg['pixel_mean'],
+        # pixel_std=d_cfg['pixel_std']
         )
 
     # build model

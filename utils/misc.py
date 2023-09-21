@@ -141,7 +141,7 @@ def load_weight(model, path_to_ckpt=None):
     if path_to_ckpt is None:
         print('No trained weight ..')
         return model
-        
+    model = model[0]
     checkpoint = torch.load(path_to_ckpt, map_location='cpu')
     # checkpoint state dict
     checkpoint_state_dict = checkpoint.pop("model")
@@ -158,7 +158,7 @@ def load_weight(model, path_to_ckpt=None):
             checkpoint_state_dict.pop(k)
             print(k)
 
-    model.load_state_dict(checkpoint_state_dict)
+    model.load_state_dict(checkpoint_state_dict, strict=False)
     print('Finished loading model!')
 
     return model

@@ -143,7 +143,7 @@ class Augmentation(object):
 
 # Transform for Testing
 class BaseTransform(object):
-    def __init__(self, img_size=224, ):
+    def __init__(self, img_size=224, device='cpu'):
         self.img_size = img_size
 
 
@@ -152,11 +152,12 @@ class BaseTransform(object):
 
 
     def __call__(self, video_clip, target=None, normalize=True):
+        # video_clip = video_clip.to(device)
         oh = video_clip[0].height
         ow = video_clip[0].width
 
         # resize
-        video_clip = [img.resize([self.img_size, self.img_size]) for img in video_clip]
+        # video_clip = [img.resize([self.img_size, self.img_size]) for img in video_clip]
 
         # normalize target
         if target is not None:
